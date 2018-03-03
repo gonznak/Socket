@@ -1,0 +1,12 @@
+﻿<Window x:Class="AppClient.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Client" Height="333" Width="525">
+	<DockPanel LastChildFill="True" Margin="7">
+		<DockPanel DockPanel.Dock="Bottom" Margin="0,7,0,0">
+			<Button Name="B_Connect" DockPanel.Dock="Right" Content="Connect" Margin="7,0,0,0" Padding="7,0" Click="B_Connect_Click"/>
+			<TextBox Name="TB_MessageField" KeyDown="MessageField_KeyDown" AcceptsReturn="False"/>
+		</DockPanel>
+		<TextBox Name="TB_Messages" TextWrapping="Wrap" IsReadOnly="True" ScrollViewer.VerticalScrollBarVisibility="Visible" />
+	</DockPanel>
+</Window>
