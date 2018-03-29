@@ -67,6 +67,9 @@ namespace RawServer
 		public ulong TotalBytesReceived { get; private set; }
 
 
+		private bool IsInitConnection { get; set; }
+		private bool IsStartingDisconnect { get; set; }
+
 		private BuffConverter buffReader = new BuffConverter();
 		private BuffConverter buffWriter = new BuffConverter();
 
@@ -78,8 +81,6 @@ namespace RawServer
 		private TimeoutWatcher receiveTimer;
 		private TimeoutWatcher disconnectTimer;
 
-		private bool IsInitConnection { get; set; }
-		private bool IsStartingDisconnect { get; set; }
 		private Guid ConnectionID { get; set; }
 		private Version ProtoVersion { get; set; }
 
@@ -105,7 +106,7 @@ namespace RawServer
 			ProtoVersion = new Version(0, 0, 0, 1);
 		}
 
-		private void BaseConnection_ClientReceiveCommand(FromClientCommand fcCommand)
+		private void BaseConnection_ClientReceiveCommand(ClientEventArgs fcCommand)
 		{
 			switch (fcCommand.Command)
 			{
@@ -129,7 +130,7 @@ namespace RawServer
 					receiveTimer.Reset();
 					TotalBytesTransmitted += (uint)fcCommand.ReceiveBufferLength;
 
-					base.StartReceive(0);
+					base.RunReceive(0);
 					break;
 
 				case ClientActions.NoConnections:

@@ -1,10 +1,17 @@
 ﻿using System;
 using System.IO;
+using System.Text;
 
 namespace RawServer
 {
 	public class BuffConverter
 	{
+		public enum StringEncoding
+		{
+			ASCII,
+			UTF8
+		}
+
 		private MemoryStream msStream = null;
 		private long writePosition = 0;
 		private long readPosition = 0;
@@ -126,6 +133,19 @@ namespace RawServer
 			return BitConverter.ToDouble(this.ReadBytes(8), 0);
 		}
 
+		public string ReadString(int length, StringEncoding encoding)
+		{
+			switch (encoding)
+			{
+				case StringEncoding.ASCII:
+					return Encoding.ASCII.GetString(this.ReadBytes(length));
+				case StringEncoding.UTF8:
+					return Encoding.UTF8.GetString(this.ReadBytes(length));
+				default:
+					throw new ArgumentException("encoding");
+			}
+		}
+
 		public byte[] ReadBytes(int length)
 		{
 			if (this.IncomingBytesUnread < length || length == 0)
@@ -196,6 +216,21 @@ namespace RawServer
 		public void WriteUInt8(byte val)
 		{
 			this.Write(BitConverter.GetBytes(val), 1);
+		}
+
+		public void WriteString(string val, StringEncoding encoding)
+		{
+			switch (encoding)
+			{
+				case StringEncoding.ASCII:
+					this.Write(Encoding.ASCII.GetBytes(val), val.Length);
+					break;
+				case StringEncoding.UTF8:
+					this.Write(Encoding.UTF8.GetBytes(val), val.Length);
+					break;
+				default:
+					throw new ArgumentException("encoding");
+			}
 		}
 
 		private void Write(byte[] data, int size)

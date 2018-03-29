@@ -1,8 +1,8 @@
 ﻿using Pool;
 
-namespace RawServer
+namespace RawServer.BaseNet
 {
-	public sealed partial class BaseProtocol_v2 : OnConnection, IPoolSlotHolder<BaseProtocol>
+	public sealed partial class BaseProtocol_v2
 	{
 		private void SendWelcome()
 		{

@@ -93,7 +93,7 @@
     <AppDesigner Include="Properties\" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Manager.SockServer\Manager.SockServer.csproj">
+    <ProjectReference Include="..\RawServer\RawServer.csproj">
       <Project>{764A57B8-CAED-42B5-9D3A-CC0AFAA04ED6}</Project>
       <Name>Manager.SockServer</Name>
     </ProjectReference>

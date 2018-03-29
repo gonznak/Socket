@@ -8,7 +8,7 @@ using System.Threading;
 
 namespace RawServer
 {
-	public delegate void OnAcceptClient<T>(T acceptClient);
+	public delegate void OnClientConnected<T>(T client);
 	public delegate void OnServerCommand(ToServerCommand Command);
 
 
@@ -18,7 +18,7 @@ namespace RawServer
 		/// <summary>
 		/// Происходит при удачном подключении клиента к серверу
 		/// </summary>
-		public event OnAcceptClient<T> Status;                                  // События сервера
+		public event OnClientConnected<T> ClientConnected;                      // Клиент подключился
 		private event OnServerCommand _eServerCommand;                          // Событие отправки данных клиенту
 		#endregion
 
@@ -49,10 +49,7 @@ namespace RawServer
 		/// </summary>
 		public Server(SConfiguration config)
 		{
-			if (config == null) throw new ArgumentException("Argument \"config\" is NULL");
-
-			this.Configuration = config;
-
+			this.Configuration = config ?? throw new ArgumentException("Argument \"config\" is NULL");
 			_aOperation = AsyncOperationManager.CreateOperation(null);          // Доступ из параллельного потока
 		}
 		#endregion
@@ -128,16 +125,15 @@ namespace RawServer
 					if (_clientPool.CurrentCount == 0 && Configuration.PoolConnectionWait == false)
 					{
 						e.AcceptSocket.Close();
+						break;
 					}
-					else
-					{
-						var recieveArgs = _clientPool.TakeObject();
-						recieveArgs.ClientClosed += ClientConnection_ClientDisconnected;
-						recieveArgs.SetAcceptSocket(e.AcceptSocket);
-						this._eServerCommand += recieveArgs.ServerActions;
 
-						OpenInternal(recieveArgs);
-					}
+					var recieveArgs = _clientPool.TakeObject();
+					recieveArgs.ClientClosed += ClientConnection_ClientDisconnected;
+					recieveArgs.SetAcceptSocket(e.AcceptSocket);
+					this._eServerCommand += recieveArgs.ServerActions;
+
+					OpenInternal(recieveArgs);
 					break;
 				case SocketError.OperationAborted:
 					break;
@@ -167,7 +163,9 @@ namespace RawServer
 				if (!willRaiseEvent)
 					AcceptCompleted(_socket, e);
 			}
-			catch { }
+			catch {
+				Console.WriteLine("AcceptAsync");
+			}
 		}
 		#endregion
 
@@ -183,19 +181,17 @@ namespace RawServer
 			// если через заданный промежуток времени не происходит отключение, разрывать связь принудительно
 
 			if (IsStarted)
-			{
 				_eServerCommand?.Invoke(Command);
-			}
 		}
 		#endregion
 
 		#region AsyncEvent
-		private void OpenInternal(T acceptClient)
+		private void OpenInternal(T client)
 		{
-			if (Status != null)
+			if (ClientConnected != null)
 			{
 				// выполняется в основном потоке
-				SendOrPostCallback cb = state => Status(acceptClient);
+				SendOrPostCallback cb = state => ClientConnected(client);
 				_aOperation.Post(cb, null);
 			}
 		}

@@ -1,10 +1,36 @@
-﻿namespace RawServer.Common
+﻿using System;
+
+namespace RawServer.Common
 {
+	public enum ClientStatuses
+	{
+		/// <summary>
+		/// Клиент в статусе подключения
+		/// </summary>
+		Connecting,
+		/// <summary>
+		/// Клиенту утверждено подключение
+		/// </summary>
+		Connected,
+		/// <summary>
+		/// Клиент отключен
+		/// </summary>
+		ClientFree
+	}
+
 	/// <summary>
 	/// Допустимые входящие события клиента
 	/// </summary>
 	public enum ClientActions
 	{
+		/// <summary>
+		/// Нет активных подключений для выполнения действия
+		/// </summary>
+		NoConnections,
+		/// <summary>
+		/// Осуществляется подключение клиента
+		/// </summary>
+		Connecting,
 		/// <summary>
 		/// Команда о подключении клиента
 		/// </summary>
@@ -30,10 +56,6 @@
 		/// </summary>
 		Shutdown,
 		/// <summary>
-		/// Нет активных подключений для выполнения действия
-		/// </summary>
-		NoConnections,
-		/// <summary>
 		/// Нельзя отправить пустой буффер
 		/// </summary>
 		ZeroBuffer,
@@ -58,7 +80,7 @@
 		Disconnect
 	}
 
-	public class FromClientCommand
+	public class ClientEventArgs : EventArgs, IDisposable
 	{
 		/// <summary>
 		/// Команда клиента.
@@ -78,12 +100,21 @@
 		/// <summary>
 		/// Объект клиента, от которого пришло событие
 		/// </summary>
-		public OnConnection Client { get; set; }
+		public OnConnection Connection { get; set; }
 
 		/// <summary>
-		/// Возвращает значение, указывающее количество полученных из сети и доступных для чтения данных
+		/// Возвращает значение, указывающее количество данных доступных для чтения
 		/// </summary>
 		public int Available { get; set; }
+
+		public void Dispose()
+		{
+			ReceiveBuffer = null;
+			ReceiveBufferLength = 0;
+			Available = 0;
+
+			Connection = null;
+		}
 	}
 
 	public class ToServerCommand

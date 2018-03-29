@@ -33,7 +33,7 @@ namespace AppRS
 			//client.Disconnect();
 
 			return;
-
+			/*
 			OpenFileDialog openFileDialog = new OpenFileDialog();
 			openFileDialog.Filter = "exe files (*.exe)|*.exe|All files (*.*)|*.*";
 			openFileDialog.RestoreDirectory = true;
@@ -43,7 +43,7 @@ namespace AppRS
 			Stream myStream = openFileDialog.OpenFile();
 			byte[] data = new byte[myStream.Length];
 			myStream.Read(data, 0, data.Length);
-
+			*/
 			//client.SendFile(data);
 		}
 	}

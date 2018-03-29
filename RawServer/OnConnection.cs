@@ -8,7 +8,7 @@ using System.Threading;
 
 namespace RawServer
 {
-	public delegate void OnClientCommand(FromClientCommand Command);
+	public delegate void OnClientCommand(ClientEventArgs clientCommand);
 	public delegate void OnClientClosed(OnConnection clientConnection);
 
 	public class OnConnection : IConnection
@@ -22,7 +22,7 @@ namespace RawServer
 		#endregion EndEvents
 
 		#region Variables
-		private ManualResetEventSlim mre_waiterLock;
+		private ManualResetEventSlim mre_WaitLock;
 
 		private Socket _socket { get; set; }
 		private SocketAsyncEventArgs _sReceiveEventArgs;
@@ -36,14 +36,6 @@ namespace RawServer
 		#endregion EndVariables
 
 		#region Properties
-		/// <summary>
-		/// Возвращает статус клиента
-		/// </summary>
-		public bool IsAccepted
-		{
-			get { return ClientEndPoint != null; }
-		}
-
 		/// <summary>
 		/// Адрес, с которого подключился клиент
 		/// </summary>
@@ -59,6 +51,11 @@ namespace RawServer
 		{
 			get { return _sReceiveEventArgs.Buffer.Length; }
 		}
+
+		/// <summary>
+		/// Возвращает статус подключения клиента
+		/// </summary>
+		public ClientStatuses ClientStatus { get; private set; }
 		#endregion EndProperties
 
 		#region .ctor Connection
@@ -67,9 +64,10 @@ namespace RawServer
 		/// </summary>
 		protected OnConnection()
 		{
+			ClientStatus = ClientStatuses.ClientFree;
 			_aOperation = AsyncOperationManager.CreateOperation(null);                             // Доступ из параллельного потока
 
-			mre_waiterLock = new ManualResetEventSlim(true, 10);
+			mre_WaitLock = new ManualResetEventSlim(true, 10);
 
 			_sReceiveEventArgs = new SocketAsyncEventArgs();
 			_sReceiveEventArgs.Completed += ArgsHandler_Completed;
@@ -82,17 +80,27 @@ namespace RawServer
 		}
 
 		/// <summary>
+		/// Разрешает дальнейшую работу с подключением
+		/// </summary>
+		protected void StartConnection()
+		{
+			ClientStatus = ClientStatuses.Connected;
+			ClientAction(new ClientEventArgs() { Command = ClientActions.Connected, Connection = this });
+		}
+
+		/// <summary>
 		/// Устанавливает точку подключения клиента
 		/// </summary>
 		/// <param name="AcceptedSocket">Сокет подключения клиента</param>
 		internal void SetAcceptSocket(Socket AcceptedSocket)
 		{
-			if (AcceptedSocket == null)
-				throw new ArgumentNullException("AcceptedSocket");
+			if (ClientStatus != ClientStatuses.ClientFree)
+				throw new InvalidOperationException("Установка нового сокета подключения невозможно, т.к. текущее подключение занято другим клиентом");
 
-			_socket = AcceptedSocket;
+			ClientStatus = ClientStatuses.Connecting;
+			_socket = AcceptedSocket ?? throw new ArgumentNullException("AcceptedSocket");
 
-			ClientAction(new FromClientCommand() { Command = IsAccepted ? ClientActions.Connected : ClientActions.NoConnections, Client = this });
+			ClientAction(new ClientEventArgs() { Command = ClientActions.Connecting, Connection = this });
 		}
 
 		private void ArgsHandler_Completed(object sender, SocketAsyncEventArgs e)
@@ -117,9 +125,9 @@ namespace RawServer
 		/// <summary>
 		/// Запуск приема сообщение от клиента
 		/// </summary>
-		protected void StartReceive(int bufferSize)
+		protected void RunReceive(int bufferSize)
 		{
-			if (isPendingReceiveIO || !IsAccepted) return;
+			if (isPendingReceiveIO || ClientStatus != ClientStatuses.Connected) return;
 
 			try
 			{
@@ -128,10 +136,12 @@ namespace RawServer
 			}
 			catch (InvalidOperationException)
 			{
+				Console.WriteLine("RunReceive -> InvalidOperationException");
 				return;
 			}
 			catch (Exception ex)
 			{
+				Console.WriteLine("RunReceive -> Exception");
 				throw ex;
 			}
 		}
@@ -163,7 +173,7 @@ namespace RawServer
 						ReceiveAsync(_sReceiveEventArgs);
 					}
 					else
-						ClientAction(new FromClientCommand() { Command = ClientActions.Receive, Client = this, ReceiveBuffer = e.Buffer, ReceiveBufferLength = e.BytesTransferred, Available = _socket.Available });
+						ClientAction(new ClientEventArgs() { Command = ClientActions.Receive, Connection = this, ReceiveBuffer = e.Buffer, ReceiveBufferLength = e.BytesTransferred, Available = _socket.Available });
 					break;
 				default:
 					Debug.WriteLine("{0}: Необработанное исключение. Событие {1}", "ProcessReceive", e.SocketError.ToString());
@@ -175,16 +185,16 @@ namespace RawServer
 		#region Send
 		public bool Send(byte[] data)
 		{
-			if (!IsAccepted) return false;
+			if (ClientStatus != ClientStatuses.Connected) return false;
 
 			if (data == null || data.Length == 0)
 			{
-				ClientAction(new FromClientCommand() { Command = ClientActions.ZeroBuffer });
+				ClientAction(new ClientEventArgs() { Command = ClientActions.ZeroBuffer });
 				return false;
 			}
 
-			mre_waiterLock.Wait();
-			mre_waiterLock.Reset();
+			mre_WaitLock.Wait();
+			mre_WaitLock.Reset();
 
 			_sSendEventArgs.SetBuffer(data, 0, data.Length);
 			SendAsync(_sSendEventArgs);
@@ -200,24 +210,24 @@ namespace RawServer
 
 		private void ProcessSend(SocketAsyncEventArgs e)
 		{
-			mre_waiterLock.Set();
+			mre_WaitLock.Set();
 
 			switch (e.SocketError)
 			{
 				case SocketError.Success:
-					ClientAction(new FromClientCommand() { Command = ClientActions.SendCompleted, Client = this, ReceiveBuffer = e.Buffer, ReceiveBufferLength = e.BytesTransferred, Available = _socket.Available });
+					ClientAction(new ClientEventArgs() { Command = ClientActions.SendCompleted, Connection = this, ReceiveBuffer = e.Buffer, ReceiveBufferLength = e.BytesTransferred, Available = _socket.Available });
 					break;
 				case SocketError.NotConnected:
 					Close();
 					break;
 				case SocketError.ConnectionAborted:
-					ClientAction(new FromClientCommand() { Command = ClientActions.Aborted, Client = this });
+					ClientAction(new ClientEventArgs() { Command = ClientActions.Aborted, Connection = this });
 					break;
 				case SocketError.ConnectionReset:
-					ClientAction(new FromClientCommand() { Command = ClientActions.Shutdown, Client = this });
+					ClientAction(new ClientEventArgs() { Command = ClientActions.Shutdown, Connection = this });
 					break;
 				default:
-					ClientAction(new FromClientCommand() { Command = ClientActions.UnknownSend, Client = this, ReceiveBuffer = e.Buffer, ReceiveBufferLength = e.BytesTransferred, Available = _socket.Available });
+					ClientAction(new ClientEventArgs() { Command = ClientActions.UnknownSend, Connection = this, ReceiveBuffer = e.Buffer, ReceiveBufferLength = e.BytesTransferred, Available = _socket.Available });
 					Debug.WriteLine("{0}: Необработанное исключение. Событие {1}", "ProcessSend", e.SocketError.ToString());
 					break;
 			}
@@ -231,16 +241,22 @@ namespace RawServer
 		/// <param name="Command">Объект сообщения,если параметр ToClient не определен, сообщение отправляется всем подключенным клиентам </param>
 		public void Close()
 		{
-			if (isPendingCloseIO || !IsAccepted) return;
+			if (isPendingCloseIO || ClientStatus == ClientStatuses.ClientFree) return;
 			CloseAsync(_sCloseArgs);
 		}
 
 		private void CloseAsync(SocketAsyncEventArgs e)
 		{
-			isPendingCloseIO = _socket.DisconnectAsync(e);
+			try
+			{
+				isPendingCloseIO = _socket.DisconnectAsync(e);
 
-			if (!isPendingCloseIO)
-				ProcessClose(e);
+				if (!isPendingCloseIO)
+					ProcessClose(e);
+			}
+			catch {
+				Console.WriteLine("CloseAsync");
+			}
 		}
 
 		private void ProcessClose(SocketAsyncEventArgs e)
@@ -252,7 +268,7 @@ namespace RawServer
 			switch (e.SocketError)
 			{
 				case SocketError.Success:
-					ClientAction(new FromClientCommand() { Command = ClientActions.Disconnected, Client = this });
+					ClientAction(new ClientEventArgs() { Command = ClientActions.Disconnected, Connection = this });
 					break;
 				default:
 					Debug.WriteLine("{0}: Необработанное исключение. Событие {1}", "ProcessClose", e.SocketError.ToString());
@@ -270,7 +286,7 @@ namespace RawServer
 		/// Принятое событие от клиента
 		/// </summary>
 		/// <param name="Command">Объект команды</param>
-		private void ClientAction(FromClientCommand Command)
+		private void ClientAction(ClientEventArgs Command)
 		{
 			if (ClientReceiveCommand != null)
 			{
@@ -289,11 +305,13 @@ namespace RawServer
 		#region Pool
 		public virtual void CleanUp()
 		{
+			ClientStatus = ClientStatuses.ClientFree;
+
 			isPendingReceiveIO = false;
 			//isPendingSendIO = false;
 			isPendingCloseIO = false;
 
-			mre_waiterLock.Set();
+			mre_WaitLock.Set();
 
 			_socket = null;
 			isPendingCloseIO = false;

@@ -17,7 +17,7 @@ namespace AppRS
 			sConfig.Port = 9520;
 
 			serv = new Server<BaseProtocol>(sConfig);
-			serv.Status += Serv_AcceptConnectionClient;
+			serv.ClientConnected += Serv_AcceptConnectionClient;
 
 		}
 

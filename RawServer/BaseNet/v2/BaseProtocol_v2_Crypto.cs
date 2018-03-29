@@ -1,12 +1,10 @@
-﻿using Pool;
-using System;
+﻿using System;
 using System.IO;
-using System.Security;
 using System.Security.Cryptography;
 
-namespace RawServer
+namespace RawServer.BaseNet
 {
-	public sealed partial class BaseProtocol_v2 : OnConnection, IPoolSlotHolder<BaseProtocol>
+	public sealed partial class BaseProtocol_v2
 	{
 		private ICryptoTransform decryptor = null;
 		private ICryptoTransform encryptor = null;
@@ -23,7 +21,7 @@ namespace RawServer
 			get => _isCrypting;
 			private set
 			{
-				if (IsAccepted) return;
+				if (base.ClientStatus != Common.ClientStatuses.Connected) return;
 
 				if (value)
 					CreateCryptoKeys();
@@ -85,7 +83,7 @@ namespace RawServer
 		{
 			byte[] testData = CryptoDeserialize(null);
 
-			if(Array.Equals(randomData, testData) == false)
+			if (Array.Equals(randomData, testData) == false)
 				return false;
 
 			return true;
@@ -197,7 +195,7 @@ namespace RawServer
 			{
 				buffWriter.WriteBool(false);
 			}
-			
+
 			WriteCRC();
 
 			base.Send(buffWriter.ToByteArray());

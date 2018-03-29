@@ -3,7 +3,7 @@ using RawServer.Common;
 using System;
 using System.Text;
 
-namespace RawServer
+namespace RawServer.BaseNet
 {
 	public sealed partial class BaseProtocol_v2 : OnConnection, IPoolSlotHolder<BaseProtocol>
 	{
@@ -17,102 +17,51 @@ namespace RawServer
 			Disconnect = 0b11111111
 		}
 
+		private BuffConverter buffReader = new BuffConverter();
+		private BuffConverter buffWriter = new BuffConverter();
+
+		private Guid ConnectionID { get; set; }
+		private Version ProtoVersion { get; set; }
+
+		private bool IsStartingDisconnect { get; set; }
+		private bool IsFragmentPack { get; set; }
+
+
 		/// <summary>
 		/// Клиент подключен и прошел валидацию
 		/// </summary>
 		public bool IsConnected { get; private set; }
 		public ulong TotalBytesTransmitted { get; private set; }
 		public ulong TotalBytesReceived { get; private set; }
-
-		private sbyte _pingInterval = 5;
-		public sbyte PingInterval
-		{
-			get { return _pingInterval; }
-			private set
-			{
-				if (value > PingTimeOut - 3)
-					throw new ArgumentException("New value PingInterval > PingTimeOut - 3");
-				else
-					_pingInterval = value < 5 ? (sbyte)5 : value;
-			}
-		}
-
-		private sbyte _pingTimeOut = 8;
-		public sbyte PingTimeOut
-		{
-			get { return _pingTimeOut; }
-			private set
-			{
-				if (value < PingInterval + 3)
-					throw new ArgumentException("New value PingTimeOut < PingInterval + 3");
-				else
-					_pingTimeOut = value < 8 ? (sbyte)8 : value;
-			}
-		}
-
-		private sbyte _receiveTimeOut = 3;
-		public sbyte ReceiveTimeOut
-		{
-			get => _receiveTimeOut;
-			private set => _pingTimeOut = value < 3 ? (sbyte)3 : value;
-		}
-
-		private sbyte _disconnectTimeOut = 5;
-		public sbyte DisconnectTimeOut
-		{
-			get => _disconnectTimeOut;
-			private set => _pingTimeOut = value < 5 ? (sbyte)5 : value;
-		}
-
 		public ulong PacketNumber { get; private set; }
 
 
-
-		private BuffConverter buffReader = new BuffConverter();
-		private BuffConverter buffWriter = new BuffConverter();
-
-		private TimeoutWatcher pingTimer;
-		private TimeoutWatcher receiveTimer;
-		private TimeoutWatcher disconnectTimer;
-
-		private bool IsInitConnection { get; set; }
-		private bool IsStartingDisconnect { get; set; }
-		private Guid ConnectionID { get; set; }
-		private Version ProtoVersion { get; set; }
-		private bool IsFragmentPack { get; set; }
-
 		public BaseProtocol_v2()
 		{
-			IsInitConnection = false;
-
-			pingTimer = new TimeoutWatcher();
-			receiveTimer = new TimeoutWatcher();
-			disconnectTimer = new TimeoutWatcher();
+			//IsInitConnection = false;
 
 			base.ClientReceiveCommand += BaseConnection_ClientReceiveCommand;
 			base.ClientClosed += BaseProtocol_ClientDisconnected;
 
-			pingTimer.TimeLapse += new OnTimerLapse(Ping_TimeLapse);
-			receiveTimer.TimeLapse += new OnTimerLapse(Receive_TimeLapse);
-			disconnectTimer.TimeLapse += new OnTimerLapse(Disconnect_TimeLapse);
+			InitTimeouts();
 
 			ProtoVersion = new Version(0, 0, 0, 2);
 		}
 
-		private void BaseConnection_ClientReceiveCommand(FromClientCommand fcCommand)
+		private void BaseConnection_ClientReceiveCommand(ClientEventArgs fcCommand)
 		{
 			switch (fcCommand.Command)
 			{
 				case ClientActions.Connected:
-					receiveTimer.Start(ReceiveTimeOut, true);
-					pingTimer.Start(PingInterval, true);
+					TimeoutsWatcher_Connected();
 
 					ConnectionID = Guid.NewGuid();
 
 					SendWelcome();
 					break;
 				case ClientActions.Receive:
-					receiveTimer.Pause();
+					TimeoutsWatcher_Receive();
+
 					TotalBytesReceived += (uint)fcCommand.ReceiveBufferLength;
 
 					if (IsConnected)
@@ -128,11 +77,12 @@ namespace RawServer
 
 					break;
 				case ClientActions.SendCompleted:
-					receiveTimer.Reset();
+					TimeoutsWatcher_SendCompleted();
+
 					TotalBytesTransmitted += (uint)fcCommand.ReceiveBufferLength;
 					PacketNumber++;
 
-					base.StartReceive(0);
+					base.RunReceive(0);
 					break;
 
 				case ClientActions.NoConnections:
@@ -159,7 +109,6 @@ namespace RawServer
 
 		public bool HandleMessage(byte[] buffer, int length)
 		{
-
 			buffReader.SetBuffer(false, buffer, length);
 
 			return true;
@@ -167,39 +116,19 @@ namespace RawServer
 
 		public void DisconnectByClient()
 		{
-			pingTimer.Pause();
-			receiveTimer.Pause();
+			TimeoutsWatcher_Disconnect();
 
 			if (IsStartingDisconnect)
 				return;
 
 			IsStartingDisconnect = true;
-			disconnectTimer.Start(DisconnectTimeOut, false);
+			TimeoutsWatcher_Disconnecting();
 			//base.Send(AssemblyRawPack(LowCommandsRequest.Disconnect));
-		}
-
-		private void Ping_TimeLapse()
-		{
-			//base.Send(AssemblyRawPack(LowCommandsRequest.Ping));
-		}
-
-		private void Receive_TimeLapse()
-		{
-			receiveTimer.Pause();
-			DisconnectByClient();
-		}
-
-		private void Disconnect_TimeLapse()
-		{
-			disconnectTimer.Pause();
-			base.Close();
 		}
 
 		private void BaseProtocol_ClientDisconnected(OnConnection clientConnection)
 		{
-			pingTimer.Pause();
-			receiveTimer.Pause();
-			disconnectTimer.Pause();
+			TimeoutsWatcher_Disconnected();
 		}
 
 		public override void ServerActions(ToServerCommand Command)
@@ -240,27 +169,20 @@ namespace RawServer
 		{
 			IsConnected = false;
 			IsCrypting = false;
+			IsStartingDisconnect = false;
 
-			pingTimer.Stop();
-			receiveTimer.Stop();
-			disconnectTimer.Stop();
+			TotalBytesTransmitted = 0;
+			TotalBytesReceived = 0;
+			PacketNumber = 0;
+
+			ConnectionID = Guid.Empty;
+
+			TimeoutsWatcher_Stop();
+			ResetTimeouts();
 
 			buffReader.Clear();
 			buffWriter.Clear();
 
-			TotalBytesTransmitted = 0;
-			TotalBytesReceived = 0;
-
-			_pingInterval = 5;
-			_pingTimeOut = 8;
-			_receiveTimeOut = 3;
-			_disconnectTimeOut = 5;
-
-			PacketNumber = 0;
-
-			IsInitConnection = false;
-			IsStartingDisconnect = false;
-			ConnectionID = Guid.Empty;
 			base.CleanUp();
 		}
 		#endregion

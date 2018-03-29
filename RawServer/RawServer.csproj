@@ -36,9 +36,10 @@
     <Reference Include="System" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="BaseNet\BaseProtocol_v2 Welcome.cs" />
-    <Compile Include="BaseNet\BaseProtocol_v2 Crypto.cs" />
-    <Compile Include="BaseNet\BaseProtocol_v2.cs" />
+    <Compile Include="BaseNet\v2\BaseProtocol_v2_TimeOuts.cs" />
+    <Compile Include="BaseNet\v2\BaseProtocol_v2_Welcome.cs" />
+    <Compile Include="BaseNet\v2\BaseProtocol_v2_Crypto.cs" />
+    <Compile Include="BaseNet\v2\BaseProtocol_v2.cs" />
     <Compile Include="BaseNet\BaseProtocol.cs" />
     <Compile Include="BaseNet\CRC8.cs" />
     <Compile Include="BaseNet\BuffConverter.cs" />
